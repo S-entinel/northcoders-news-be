@@ -260,3 +260,176 @@ describe('GET /api/articles', () => {
     });
   });
 });
+
+describe('GET /api/users', () => {
+  test('200: responds with an array of user objects', async () => {
+    const response = await request(app)
+      .get('/api/users')
+      .expect(200);
+
+    expect(response.body).toHaveProperty('users');
+    expect(Array.isArray(response.body.users)).toBe(true);
+    expect(response.body.users.length).toBeGreaterThan(0);
+  });
+
+  test('200: each user object has the correct properties', async () => {
+    const response = await request(app)
+      .get('/api/users')
+      .expect(200);
+
+    const users = response.body.users;
+    
+    users.forEach((user) => {
+      expect(user).toHaveProperty('username');
+      expect(user).toHaveProperty('name');
+      expect(user).toHaveProperty('avatar_url');
+      
+      expect(typeof user.username).toBe('string');
+      expect(typeof user.name).toBe('string');
+      expect(typeof user.avatar_url).toBe('string');
+    });
+  });
+
+  test('200: user objects only contain the required properties', async () => {
+    const response = await request(app)
+      .get('/api/users')
+      .expect(200);
+
+    const users = response.body.users;
+    
+    users.forEach((user) => {
+      const userKeys = Object.keys(user);
+      expect(userKeys).toHaveLength(3);
+      expect(userKeys).toEqual(expect.arrayContaining(['username', 'name', 'avatar_url']));
+    });
+  });
+
+  test('200: returns all users from the database', async () => {
+    const userCountResult = await db.query('SELECT COUNT(*) FROM users;');
+    const expectedCount = parseInt(userCountResult.rows[0].count);
+
+    const response = await request(app)
+      .get('/api/users')
+      .expect(200);
+
+    expect(response.body.users.length).toBe(expectedCount);
+  });
+
+  test('200: usernames are unique', async () => {
+    const response = await request(app)
+      .get('/api/users')
+      .expect(200);
+
+    const users = response.body.users;
+    const usernames = users.map(user => user.username);
+    const uniqueUsernames = [...new Set(usernames)];
+    
+    expect(usernames.length).toBe(uniqueUsernames.length);
+  });
+
+  test('200: all required properties have non-empty string values', async () => {
+    const response = await request(app)
+      .get('/api/users')
+      .expect(200);
+
+    const users = response.body.users;
+    
+    users.forEach((user) => {
+      expect(user.username.length).toBeGreaterThan(0);
+      expect(user.name.length).toBeGreaterThan(0);
+      expect(user.avatar_url.length).toBeGreaterThan(0);
+      
+      expect(user.username.trim()).toBe(user.username);
+      expect(user.name.trim()).toBe(user.name);
+      expect(user.avatar_url.trim()).toBe(user.avatar_url);
+    });
+  });
+
+  test('200: avatar_url is a valid URL format', async () => {
+    const response = await request(app)
+      .get('/api/users')
+      .expect(200);
+
+    const users = response.body.users;
+    
+    users.forEach((user) => {
+      expect(user.avatar_url).toMatch(/^https?:\/\/.+/);
+    });
+  });
+
+  test('200: users are returned in consistent order', async () => {
+    const response1 = await request(app)
+      .get('/api/users')
+      .expect(200);
+
+    const response2 = await request(app)
+      .get('/api/users')
+      .expect(200);
+
+    const users1 = response1.body.users;
+    const users2 = response2.body.users;
+    
+    expect(users1).toEqual(users2);
+  });
+
+  test('200: response structure is correct', async () => {
+    const response = await request(app)
+      .get('/api/users')
+      .expect(200);
+
+    const responseKeys = Object.keys(response.body);
+    expect(responseKeys).toHaveLength(1);
+    expect(responseKeys[0]).toBe('users');
+  });
+
+  test('200: usernames match database usernames exactly', async () => {
+    const response = await request(app)
+      .get('/api/users')
+      .expect(200);
+
+    const users = response.body.users;
+    
+    const dbUsersResult = await db.query('SELECT username FROM users ORDER BY username;');
+    const dbUsernames = dbUsersResult.rows.map(row => row.username);
+    
+    const responseUsernames = users.map(user => user.username).sort();
+    
+    expect(responseUsernames).toEqual(dbUsernames);
+  });
+
+  test('200: names match database names exactly', async () => {
+    const response = await request(app)
+      .get('/api/users')
+      .expect(200);
+
+    const users = response.body.users;
+    
+    const dbUsersResult = await db.query('SELECT username, name FROM users ORDER BY username;');
+    const dbUsers = dbUsersResult.rows;
+    
+    const sortedResponseUsers = users.sort((a, b) => a.username.localeCompare(b.username));
+    
+    sortedResponseUsers.forEach((user, index) => {
+      expect(user.username).toBe(dbUsers[index].username);
+      expect(user.name).toBe(dbUsers[index].name);
+    });
+  });
+
+  test('200: avatar_urls match database avatar_urls exactly', async () => {
+    const response = await request(app)
+      .get('/api/users')
+      .expect(200);
+
+    const users = response.body.users;
+    
+    const dbUsersResult = await db.query('SELECT username, avatar_url FROM users ORDER BY username;');
+    const dbUsers = dbUsersResult.rows;
+    
+    const sortedResponseUsers = users.sort((a, b) => a.username.localeCompare(b.username));
+    
+    sortedResponseUsers.forEach((user, index) => {
+      expect(user.username).toBe(dbUsers[index].username);
+      expect(user.avatar_url).toBe(dbUsers[index].avatar_url);
+    });
+  });
+});

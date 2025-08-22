@@ -3,6 +3,7 @@ const app = express();
 const endpointsJson = require("./endpoints.json");
 const { getTopics } = require("./controllers/topics.controllers")
 const { getArticles } = require("./controllers/articles.controllers")
+const { getUsers } = require("./controllers/users.controllers")
 const { handlePsqlErrors, handleCustomErrors, handleServerErrors } = require("./errors");
 
 
@@ -21,6 +22,7 @@ app.get("/api/topics", getTopics);
 
 app.get("/api/articles", getArticles);
 
+app.get("/api/users", getUsers);
 
 
 app.use(handleCustomErrors)
