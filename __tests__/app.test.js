@@ -433,3 +433,260 @@ describe('GET /api/users', () => {
     });
   });
 });
+
+
+describe('GET /api/articles/:article_id', () => {
+  test('200: responds with a single article object', async () => {
+    const response = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+
+    expect(response.body).toHaveProperty('article');
+    expect(typeof response.body.article).toBe('object');
+    expect(Array.isArray(response.body.article)).toBe(false);
+  });
+
+  test('200: article object has all required properties', async () => {
+    const response = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+
+    const article = response.body.article;
+    
+    expect(article).toHaveProperty('author');
+    expect(article).toHaveProperty('title');
+    expect(article).toHaveProperty('article_id');
+    expect(article).toHaveProperty('body');
+    expect(article).toHaveProperty('topic');
+    expect(article).toHaveProperty('created_at');
+    expect(article).toHaveProperty('votes');
+    expect(article).toHaveProperty('article_img_url');
+    
+    expect(typeof article.author).toBe('string');
+    expect(typeof article.title).toBe('string');
+    expect(typeof article.article_id).toBe('number');
+    expect(typeof article.body).toBe('string');
+    expect(typeof article.topic).toBe('string');
+    expect(typeof article.created_at).toBe('string');
+    expect(typeof article.votes).toBe('number');
+    expect(typeof article.article_img_url).toBe('string');
+  });
+
+  test('200: article_id matches the requested id', async () => {
+    const requestedId = 3;
+    const response = await request(app)
+      .get(`/api/articles/${requestedId}`)
+      .expect(200);
+
+    expect(response.body.article.article_id).toBe(requestedId);
+  });
+
+  test('200: body property is present and contains content', async () => {
+    const response = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+
+    const article = response.body.article;
+    expect(article.body.length).toBeGreaterThan(0);
+  });
+
+  test('200: returns correct article data from database', async () => {
+    const articleId = 2;
+    
+    const dbResult = await db.query(
+      'SELECT * FROM articles WHERE article_id = $1;',
+      [articleId]
+    );
+    const dbArticle = dbResult.rows[0];
+
+    const response = await request(app)
+      .get(`/api/articles/${articleId}`)
+      .expect(200);
+
+    const article = response.body.article;
+    
+    expect(article.author).toBe(dbArticle.author);
+    expect(article.title).toBe(dbArticle.title);
+    expect(article.article_id).toBe(dbArticle.article_id);
+    expect(article.body).toBe(dbArticle.body);
+    expect(article.topic).toBe(dbArticle.topic);
+    expect(article.votes).toBe(dbArticle.votes);
+    expect(article.article_img_url).toBe(dbArticle.article_img_url);
+    expect(new Date(article.created_at)).toEqual(dbArticle.created_at);
+  });
+
+  test('200: created_at is in valid ISO format', async () => {
+    const response = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+
+    const article = response.body.article;
+    const date = new Date(article.created_at);
+    
+    expect(article.created_at).toBe(date.toISOString());
+    expect(isNaN(date.getTime())).toBe(false);
+  });
+
+  test('200: votes is an integer', async () => {
+    const response = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+
+    const article = response.body.article;
+    expect(Number.isInteger(article.votes)).toBe(true);
+  });
+
+  test('200: article_img_url is a valid URL format', async () => {
+    const response = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+
+    const article = response.body.article;
+    if (article.article_img_url) {
+      expect(article.article_img_url).toMatch(/^https?:\/\/.+/);
+    }
+  });
+
+  test('200: topic exists in topics table', async () => {
+    const response = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+
+    const article = response.body.article;
+    
+    const topicsResult = await db.query('SELECT slug FROM topics WHERE slug = $1;', [article.topic]);
+    expect(topicsResult.rows.length).toBe(1);
+  });
+
+  test('200: author exists in users table', async () => {
+    const response = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+
+    const article = response.body.article;
+    
+    const usersResult = await db.query('SELECT username FROM users WHERE username = $1;', [article.author]);
+    expect(usersResult.rows.length).toBe(1);
+  });
+
+  test('200: response structure is correct', async () => {
+    const response = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+
+    const responseKeys = Object.keys(response.body);
+    expect(responseKeys).toHaveLength(1);
+    expect(responseKeys[0]).toBe('article');
+  });
+
+  test('404: responds with error when article_id does not exist', async () => {
+    const response = await request(app)
+      .get('/api/articles/999999')
+      .expect(404);
+
+    expect(response.body.msg).toBe('Article not found');
+  });
+
+  test('400: responds with error when article_id is not a number', async () => {
+    const response = await request(app)
+      .get('/api/articles/not-a-number')
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('400: responds with error when article_id is a decimal', async () => {
+    const response = await request(app)
+      .get('/api/articles/1.5')
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('400: responds with error when article_id is zero', async () => {
+    const response = await request(app)
+      .get('/api/articles/0')
+      .expect(404);
+
+    expect(response.body.msg).toBe('Article not found');
+  });
+
+  test('400: responds with error when article_id is negative', async () => {
+    const response = await request(app)
+      .get('/api/articles/-1')
+      .expect(404);
+
+    expect(response.body.msg).toBe('Article not found');
+  });
+
+  test('400: responds with error when article_id contains special characters', async () => {
+    const response = await request(app)
+      .get('/api/articles/1@')
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('200: responds correctly when article_id is empty (routes to all articles)', async () => {
+    const response = await request(app)
+      .get('/api/articles/')
+      .expect(200);
+
+    expect(response.body).toHaveProperty('articles');
+    expect(Array.isArray(response.body.articles)).toBe(true);
+  });
+
+  test('404: responds with error when article_id is valid but non-existent', async () => {
+    const maxIdResult = await db.query('SELECT MAX(article_id) FROM articles;');
+    const nonExistentId = maxIdResult.rows[0].max + 1;
+
+    const response = await request(app)
+      .get(`/api/articles/${nonExistentId}`)
+      .expect(404);
+
+    expect(response.body.msg).toBe('Article not found');
+  });
+
+  test('400: responds with error when article_id contains SQL injection attempt', async () => {
+    const response = await request(app)
+      .get('/api/articles/1; DROP TABLE articles;')
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('200: works with single digit article_id', async () => {
+    const response = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+
+    expect(response.body.article.article_id).toBe(1);
+  });
+
+  test('200: works with multi-digit article_id', async () => {
+    const response = await request(app)
+      .get('/api/articles/10')
+      .expect(200);
+
+    expect(response.body.article.article_id).toBe(10);
+  });
+
+  test('200: article object only contains expected properties', async () => {
+    const response = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+
+    const article = response.body.article;
+    const articleKeys = Object.keys(article);
+    
+    expect(articleKeys).toHaveLength(8);
+    expect(articleKeys).toEqual(expect.arrayContaining([
+      'author', 'title', 'article_id', 'body', 'topic', 
+      'created_at', 'votes', 'article_img_url'
+    ]));
+  });
+});
