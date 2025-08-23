@@ -1,6 +1,17 @@
 const db = require(`../db/connection`);
 
-exports.fetchArticles = () => {
+exports.fetchArticles = (sortBy, order) => {
+
+    const validColumns = ['article_id', 'title', 'topic', 'author', 'created_at', 'votes', 'comment_count'];
+    if (!validColumns.includes(sortBy)) {
+        return Promise.reject({ status: 400, msg: 'Invalid sort column' });
+    }
+
+    const validOrders = ['asc', 'desc'];
+    if (!validOrders.includes(order.toLowerCase())) {
+        return Promise.reject({ status: 400, msg: 'Invalid order query' });
+    }
+
     return db.query(
         `SELECT 
         articles.article_id, articles.title, articles.topic, articles.author, 
@@ -9,12 +20,11 @@ exports.fetchArticles = () => {
         FROM articles
         LEFT JOIN comments ON articles.article_id = comments.article_id
         GROUP BY articles.article_id
-        ORDER BY articles.created_at DESC    
-        ;`
+        ORDER BY ${sortBy} ${order.toUpperCase()};`
     ).then(({ rows }) => {
-        return rows
-    })
-}
+        return rows;
+    });
+};
 
 exports.fetchArticleById = ( articleId ) => {
     return db.query(

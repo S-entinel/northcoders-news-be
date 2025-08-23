@@ -1728,3 +1728,240 @@ describe('DELETE /api/comments/:comment_id', () => {
     expect(response.body.msg).toBe('Comment not found');
   });
 });
+
+describe('GET /api/articles (sorting queries)', () => {
+  // Default behavior (should not break existing functionality)
+  test('200: defaults to sorting by created_at descending when no queries provided', async () => {
+    const response = await request(app)
+      .get('/api/articles')
+      .expect(200);
+
+    const articles = response.body.articles;
+    expect(articles.length).toBeGreaterThan(1);
+
+    // Check default sort (created_at desc)
+    for (let i = 0; i < articles.length - 1; i++) {
+      const currentDate = new Date(articles[i].created_at);
+      const nextDate = new Date(articles[i + 1].created_at);
+      expect(currentDate.getTime()).toBeGreaterThanOrEqual(nextDate.getTime());
+    }
+  });
+
+  // sort_by tests
+  test('200: sorts by title when sort_by=title', async () => {
+    const response = await request(app)
+      .get('/api/articles?sort_by=title')
+      .expect(200);
+
+    const articles = response.body.articles;
+    const titles = articles.map(article => article.title);
+    const sortedTitles = [...titles].sort().reverse(); // Default order is desc
+    
+    expect(titles).toEqual(sortedTitles);
+  });
+
+  test('200: sorts by votes when sort_by=votes', async () => {
+    const response = await request(app)
+      .get('/api/articles?sort_by=votes')
+      .expect(200);
+
+    const articles = response.body.articles;
+    
+    // Check descending order (default)
+    for (let i = 0; i < articles.length - 1; i++) {
+      expect(articles[i].votes).toBeGreaterThanOrEqual(articles[i + 1].votes);
+    }
+  });
+
+  test('200: sorts by author when sort_by=author', async () => {
+    const response = await request(app)
+      .get('/api/articles?sort_by=author')
+      .expect(200);
+
+    const articles = response.body.articles;
+    const authors = articles.map(article => article.author);
+    const sortedAuthors = [...authors].sort().reverse(); // Default order is desc
+    
+    expect(authors).toEqual(sortedAuthors);
+  });
+
+  test('200: sorts by comment_count when sort_by=comment_count', async () => {
+    const response = await request(app)
+      .get('/api/articles?sort_by=comment_count')
+      .expect(200);
+
+    const articles = response.body.articles;
+    
+    // Check descending order (default)
+    for (let i = 0; i < articles.length - 1; i++) {
+      expect(articles[i].comment_count).toBeGreaterThanOrEqual(articles[i + 1].comment_count);
+    }
+  });
+
+  // order tests
+  test('200: sorts in ascending order when order=asc', async () => {
+    const response = await request(app)
+      .get('/api/articles?order=asc')
+      .expect(200);
+
+    const articles = response.body.articles;
+    
+    // Check ascending order by created_at (default sort_by)
+    for (let i = 0; i < articles.length - 1; i++) {
+      const currentDate = new Date(articles[i].created_at);
+      const nextDate = new Date(articles[i + 1].created_at);
+      expect(currentDate.getTime()).toBeLessThanOrEqual(nextDate.getTime());
+    }
+  });
+
+  test('200: sorts in descending order when order=desc', async () => {
+    const response = await request(app)
+      .get('/api/articles?order=desc')
+      .expect(200);
+
+    const articles = response.body.articles;
+    
+    // Check descending order by created_at (default sort_by)
+    for (let i = 0; i < articles.length - 1; i++) {
+      const currentDate = new Date(articles[i].created_at);
+      const nextDate = new Date(articles[i + 1].created_at);
+      expect(currentDate.getTime()).toBeGreaterThanOrEqual(nextDate.getTime());
+    }
+  });
+
+  // Combined sort_by and order tests
+  test('200: sorts by votes in ascending order', async () => {
+    const response = await request(app)
+      .get('/api/articles?sort_by=votes&order=asc')
+      .expect(200);
+
+    const articles = response.body.articles;
+    
+    // Check ascending order by votes
+    for (let i = 0; i < articles.length - 1; i++) {
+      expect(articles[i].votes).toBeLessThanOrEqual(articles[i + 1].votes);
+    }
+  });
+
+  test('200: sorts by title in descending order', async () => {
+    const response = await request(app)
+      .get('/api/articles?sort_by=title&order=desc')
+      .expect(200);
+
+    const articles = response.body.articles;
+    const titles = articles.map(article => article.title);
+    const sortedTitles = [...titles].sort().reverse();
+    
+    expect(titles).toEqual(sortedTitles);
+  });
+
+  test('200: maintains all article properties when sorting', async () => {
+    const response = await request(app)
+      .get('/api/articles?sort_by=author&order=asc')
+      .expect(200);
+
+    const articles = response.body.articles;
+    
+    articles.forEach((article) => {
+      expect(article).toHaveProperty('article_id');
+      expect(article).toHaveProperty('title');
+      expect(article).toHaveProperty('topic');
+      expect(article).toHaveProperty('author');
+      expect(article).toHaveProperty('created_at');
+      expect(article).toHaveProperty('votes');
+      expect(article).toHaveProperty('article_img_url');
+      expect(article).toHaveProperty('comment_count');
+      expect(article).not.toHaveProperty('body');
+    });
+  });
+
+  // Error handling tests
+  test('400: responds with error when sort_by column does not exist', async () => {
+    const response = await request(app)
+      .get('/api/articles?sort_by=invalid_column')
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('400: responds with error when order is not asc or desc', async () => {
+    const response = await request(app)
+      .get('/api/articles?order=invalid_order')
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('400: responds with error when sort_by is SQL injection attempt', async () => {
+    const response = await request(app)
+      .get('/api/articles?sort_by=title; DROP TABLE articles;')
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('400: responds with error when order is SQL injection attempt', async () => {
+    const response = await request(app)
+      .get('/api/articles?order=asc; DELETE FROM articles;')
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('400: handles multiple invalid parameters', async () => {
+    const response = await request(app)
+      .get('/api/articles?sort_by=invalid_column&order=invalid_order')
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  // Edge cases
+  test('200: case insensitive order parameter', async () => {
+    const response = await request(app)
+      .get('/api/articles?order=ASC')
+      .expect(200);
+
+    const articles = response.body.articles;
+    
+    // Should work the same as lowercase
+    for (let i = 0; i < articles.length - 1; i++) {
+      const currentDate = new Date(articles[i].created_at);
+      const nextDate = new Date(articles[i + 1].created_at);
+      expect(currentDate.getTime()).toBeLessThanOrEqual(nextDate.getTime());
+    }
+  });
+
+  test('200: ignores empty query parameters', async () => {
+    const response = await request(app)
+      .get('/api/articles?sort_by=&order=')
+      .expect(200);
+
+    const articles = response.body.articles;
+    
+    // Should default to created_at desc
+    for (let i = 0; i < articles.length - 1; i++) {
+      const currentDate = new Date(articles[i].created_at);
+      const nextDate = new Date(articles[i + 1].created_at);
+      expect(currentDate.getTime()).toBeGreaterThanOrEqual(nextDate.getTime());
+    }
+  });
+
+  test('200: ignores extra query parameters', async () => {
+    const response = await request(app)
+      .get('/api/articles?sort_by=votes&order=asc&extra_param=ignored')
+      .expect(200);
+
+    const articles = response.body.articles;
+    
+    // Should sort by votes asc, ignoring extra parameter
+    for (let i = 0; i < articles.length - 1; i++) {
+      expect(articles[i].votes).toBeLessThanOrEqual(articles[i + 1].votes);
+    }
+  });
+});
