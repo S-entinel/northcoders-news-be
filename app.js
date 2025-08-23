@@ -4,7 +4,7 @@ const endpointsJson = require("./endpoints.json");
 const { getTopics } = require("./controllers/topics.controllers")
 const { getArticles, getArticleById } = require("./controllers/articles.controllers")
 const { getUsers } = require("./controllers/users.controllers")
-const { getCommentsById } = require("./controllers/comments.controllers")
+const { getCommentsById, postCommentsById } = require("./controllers/comments.controllers")
 const { handlePsqlErrors, handleCustomErrors, handleServerErrors } = require("./errors");
 
 
@@ -28,6 +28,9 @@ app.get("/api/users", getUsers);
 app.get("/api/articles/:article_id", getArticleById);
 
 app.get("/api/articles/:article_id/comments", getCommentsById);
+
+app.post("/api/articles/:article_id/comments", postCommentsById);
+
 
 
 

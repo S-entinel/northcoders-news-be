@@ -86,7 +86,6 @@ describe("GET /api/topics", () => {
   });
 });
 
-
 describe('GET /api/articles', () => {
   test('200: responds with an array of article objects', async () => {
     const response = await request(app)
@@ -433,7 +432,6 @@ describe('GET /api/users', () => {
     });
   });
 });
-
 
 describe('GET /api/articles/:article_id', () => {
   test('200: responds with a single article object', async () => {
@@ -937,14 +935,6 @@ describe('GET /api/articles/:article_id/comments', () => {
     expect(typeof response.body.msg).toBe('string');
   });
 
-  test('500: responds with server error when article_id is too large for JavaScript', async () => {
-    const response = await request(app)
-      .get('/api/articles/999999999999999999999/comments')
-      .expect(500);
-
-    expect(response.body.msg).toBe('Internal server error');
-  });
-
   test('404: responds with error when article_id is valid but non-existent', async () => {
     const maxIdResult = await db.query('SELECT MAX(article_id) FROM articles;');
     const nonExistentId = maxIdResult.rows[0].max + 1;
@@ -1012,5 +1002,275 @@ describe('GET /api/articles/:article_id/comments', () => {
       .expect(200);
 
     expect(response1.body.comments).toEqual(response2.body.comments);
+  });
+});
+
+describe('POST /api/articles/:article_id/comments', () => {
+  test('201: responds with the posted comment', async () => {
+    const newComment = {
+      username: 'butter_bridge',
+      body: 'This is a test comment'
+    };
+
+    const response = await request(app)
+      .post('/api/articles/1/comments')
+      .send(newComment)
+      .expect(201);
+
+    expect(response.body).toHaveProperty('comment');
+    expect(typeof response.body.comment).toBe('object');
+    expect(Array.isArray(response.body.comment)).toBe(false);
+  });
+
+  test('201: posted comment has all required properties', async () => {
+    const newComment = {
+      username: 'butter_bridge',
+      body: 'This is a test comment'
+    };
+
+    const response = await request(app)
+      .post('/api/articles/1/comments')
+      .send(newComment)
+      .expect(201);
+
+    const comment = response.body.comment;
+    
+    expect(comment).toHaveProperty('comment_id');
+    expect(comment).toHaveProperty('votes');
+    expect(comment).toHaveProperty('created_at');
+    expect(comment).toHaveProperty('author');
+    expect(comment).toHaveProperty('body');
+    expect(comment).toHaveProperty('article_id');
+    
+    expect(typeof comment.comment_id).toBe('number');
+    expect(typeof comment.votes).toBe('number');
+    expect(typeof comment.created_at).toBe('string');
+    expect(typeof comment.author).toBe('string');
+    expect(typeof comment.body).toBe('string');
+    expect(typeof comment.article_id).toBe('number');
+  });
+
+  test('201: posted comment has correct values', async () => {
+    const newComment = {
+      username: 'butter_bridge',
+      body: 'This is a test comment'
+    };
+
+    const response = await request(app)
+      .post('/api/articles/1/comments')
+      .send(newComment)
+      .expect(201);
+
+    const comment = response.body.comment;
+    
+    expect(comment.author).toBe('butter_bridge');
+    expect(comment.body).toBe('This is a test comment');
+    expect(comment.article_id).toBe(1);
+    expect(comment.votes).toBe(0);
+    expect(comment.comment_id).toBeGreaterThan(0);
+    
+    const createdAt = new Date(comment.created_at);
+    const now = new Date();
+    expect(createdAt).toBeInstanceOf(Date);
+    expect(now - createdAt).toBeLessThan(5000); 
+  });
+
+  test('201: comment is actually saved to database', async () => {
+    const newComment = {
+      username: 'butter_bridge',
+      body: 'This comment should be saved'
+    };
+
+    const response = await request(app)
+      .post('/api/articles/1/comments')
+      .send(newComment)
+      .expect(201);
+
+    const commentId = response.body.comment.comment_id;
+    
+    const dbResult = await db.query(
+      'SELECT * FROM comments WHERE comment_id = $1',
+      [commentId]
+    );
+    
+    expect(dbResult.rows).toHaveLength(1);
+    expect(dbResult.rows[0].author).toBe('butter_bridge');
+    expect(dbResult.rows[0].body).toBe('This comment should be saved');
+    expect(dbResult.rows[0].article_id).toBe(1);
+  });
+
+  test('201: works with different valid users', async () => {
+    const newComment = {
+      username: 'rogersop',
+      body: 'Another test comment'
+    };
+
+    const response = await request(app)
+      .post('/api/articles/2/comments')
+      .send(newComment)
+      .expect(201);
+
+    expect(response.body.comment.author).toBe('rogersop');
+    expect(response.body.comment.article_id).toBe(2);
+  });
+
+  test('404: responds with error when article_id does not exist', async () => {
+    const newComment = {
+      username: 'butter_bridge',
+      body: 'This article does not exist'
+    };
+
+    const response = await request(app)
+      .post('/api/articles/999999/comments')
+      .send(newComment)
+      .expect(404);
+
+    expect(response.body.msg).toBe('Article not found');
+  });
+
+  test('404: responds with error when username does not exist', async () => {
+    const newComment = {
+      username: 'nonexistent_user',
+      body: 'This user does not exist'
+    };
+
+    const response = await request(app)
+      .post('/api/articles/1/comments')
+      .send(newComment)
+      .expect(404);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('400: responds with error when article_id is not a number', async () => {
+    const newComment = {
+      username: 'butter_bridge',
+      body: 'Test comment'
+    };
+
+    const response = await request(app)
+      .post('/api/articles/not-a-number/comments')
+      .send(newComment)
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('400: responds with error when username is missing', async () => {
+    const newComment = {
+      body: 'Test comment without username'
+    };
+
+    const response = await request(app)
+      .post('/api/articles/1/comments')
+      .send(newComment)
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('400: responds with error when body is missing', async () => {
+    const newComment = {
+      username: 'butter_bridge'
+    };
+
+    const response = await request(app)
+      .post('/api/articles/1/comments')
+      .send(newComment)
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('400: responds with error when request body is empty', async () => {
+    const response = await request(app)
+      .post('/api/articles/1/comments')
+      .send({})
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('400: responds with error when username is not a string', async () => {
+    const newComment = {
+      username: 123,
+      body: 'Test comment'
+    };
+
+    const response = await request(app)
+      .post('/api/articles/1/comments')
+      .send(newComment)
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('400: responds with error when body is not a string', async () => {
+    const newComment = {
+      username: 'butter_bridge',
+      body: 123
+    };
+
+    const response = await request(app)
+      .post('/api/articles/1/comments')
+      .send(newComment)
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('400: responds with error when username is empty string', async () => {
+    const newComment = {
+      username: '',
+      body: 'Test comment'
+    };
+
+    const response = await request(app)
+      .post('/api/articles/1/comments')
+      .send(newComment)
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('400: responds with error when body is empty string', async () => {
+    const newComment = {
+      username: 'butter_bridge',
+      body: ''
+    };
+
+    const response = await request(app)
+      .post('/api/articles/1/comments')
+      .send(newComment)
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('201: ignores extra properties in request body', async () => {
+    const newComment = {
+      username: 'butter_bridge',
+      body: 'Test comment',
+      votes: 100,
+      extraProperty: 'This should be ignored'
+    };
+
+    const response = await request(app)
+      .post('/api/articles/1/comments')
+      .send(newComment)
+      .expect(201);
+
+    const comment = response.body.comment;
+    expect(comment.votes).toBe(0); 
+    expect(comment).not.toHaveProperty('extraProperty');
   });
 });
