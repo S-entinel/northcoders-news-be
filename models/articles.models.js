@@ -1,30 +1,56 @@
 const db = require(`../db/connection`);
 
-exports.fetchArticles = (sortBy, order) => {
-
+exports.fetchArticles = (sortBy, order, topic) => {
     const validColumns = ['article_id', 'title', 'topic', 'author', 'created_at', 'votes', 'comment_count'];
+    const queryParams = []
+    let queryStr = `SELECT
+      articles.article_id, articles.title, articles.topic, articles.author,
+      articles.created_at, articles.votes, articles.article_img_url,
+      COUNT(comments.article_id)::INT AS comment_count
+      FROM articles
+      LEFT JOIN comments ON articles.article_id = comments.article_id`
+  
     if (!validColumns.includes(sortBy)) {
-        return Promise.reject({ status: 400, msg: 'Invalid sort column' });
+      return Promise.reject({ status: 400, msg: 'Invalid sort column' });
     }
-
+  
     const validOrders = ['asc', 'desc'];
     if (!validOrders.includes(order.toLowerCase())) {
-        return Promise.reject({ status: 400, msg: 'Invalid order query' });
+      return Promise.reject({ status: 400, msg: 'Invalid order query' });
     }
+  
+    if (topic && topic !== '') { 
 
-    return db.query(
-        `SELECT 
-        articles.article_id, articles.title, articles.topic, articles.author, 
-        articles.created_at, articles.votes, articles.article_img_url,
-        COUNT(comments.article_id)::INT AS comment_count
-        FROM articles
-        LEFT JOIN comments ON articles.article_id = comments.article_id
-        GROUP BY articles.article_id
-        ORDER BY ${sortBy} ${order.toUpperCase()};`
-    ).then(({ rows }) => {
+        if (!/^[a-zA-Z0-9_-]+$/.test(topic)) {
+            return Promise.reject({ status: 400, msg: 'Invalid topic parameter' });
+          }
+
+      return db.query('SELECT slug FROM topics WHERE slug = $1', [topic])
+        .then(({ rows }) => {
+          if (rows.length === 0) {
+            return Promise.reject({ status: 404, msg: 'Topic not found' });
+          }
+          
+          queryStr += ` WHERE articles.topic = $1`;
+          queryParams.push(topic);
+          queryStr += ` GROUP BY articles.article_id
+            ORDER BY ${sortBy} ${order.toUpperCase()};`
+          
+          return db.query(queryStr, queryParams);
+        })
+        .then(({ rows }) => {
+          return rows;
+        });
+    }
+  
+    queryStr += ` GROUP BY articles.article_id
+      ORDER BY ${sortBy} ${order.toUpperCase()};`
+    
+    return db.query(queryStr, queryParams)
+      .then(({ rows }) => {
         return rows;
-    });
-};
+      });
+  };
 
 exports.fetchArticleById = ( articleId ) => {
     return db.query(

@@ -1965,3 +1965,210 @@ describe('GET /api/articles (sorting queries)', () => {
     }
   });
 });
+
+describe('GET /api/articles (topic query)', () => {
+  // Default behavior (should not break existing functionality)
+  test('200: returns all articles when no topic query provided', async () => {
+    const response = await request(app)
+      .get('/api/articles')
+      .expect(200);
+
+    const articles = response.body.articles;
+    expect(articles.length).toBeGreaterThan(1);
+    
+    // Should include articles from different topics (mitch and cats)
+    const topics = [...new Set(articles.map(article => article.topic))];
+    expect(topics.length).toBeGreaterThanOrEqual(2);
+  });
+
+  // Topic filtering tests
+  test('200: filters articles by topic when topic=mitch', async () => {
+    const response = await request(app)
+      .get('/api/articles?topic=mitch')
+      .expect(200);
+
+    const articles = response.body.articles;
+    expect(articles.length).toBeGreaterThan(0);
+    
+    // All articles should have the mitch topic
+    articles.forEach(article => {
+      expect(article.topic).toBe('mitch');
+    });
+  });
+
+  test('200: filters articles by topic when topic=cats', async () => {
+    const response = await request(app)
+      .get('/api/articles?topic=cats')
+      .expect(200);
+
+    const articles = response.body.articles;
+    expect(articles.length).toBeGreaterThan(0);
+    
+    // All articles should have the cats topic
+    articles.forEach(article => {
+      expect(article.topic).toBe('cats');
+    });
+  });
+
+  test('200: returns empty array for topic=paper (valid topic with no articles)', async () => {
+    const response = await request(app)
+      .get('/api/articles?topic=paper')
+      .expect(200);
+
+    expect(response.body.articles).toEqual([]);
+  });
+
+  test('200: maintains all article properties when filtering by topic', async () => {
+    const response = await request(app)
+      .get('/api/articles?topic=mitch')
+      .expect(200);
+
+    const articles = response.body.articles;
+    expect(articles.length).toBeGreaterThan(0);
+    
+    articles.forEach((article) => {
+      expect(article).toHaveProperty('article_id');
+      expect(article).toHaveProperty('title');
+      expect(article).toHaveProperty('topic');
+      expect(article).toHaveProperty('author');
+      expect(article).toHaveProperty('created_at');
+      expect(article).toHaveProperty('votes');
+      expect(article).toHaveProperty('article_img_url');
+      expect(article).toHaveProperty('comment_count');
+      expect(article).not.toHaveProperty('body');
+    });
+  });
+
+  test('200: maintains sorting when filtering by topic', async () => {
+    const response = await request(app)
+      .get('/api/articles?topic=mitch')
+      .expect(200);
+
+    const articles = response.body.articles;
+    expect(articles.length).toBeGreaterThan(1);
+    
+    // Should be sorted by created_at desc (default)
+    for (let i = 0; i < articles.length - 1; i++) {
+      const currentDate = new Date(articles[i].created_at);
+      const nextDate = new Date(articles[i + 1].created_at);
+      expect(currentDate.getTime()).toBeGreaterThanOrEqual(nextDate.getTime());
+    }
+  });
+
+  test('200: works with topic and sorting queries combined', async () => {
+    const response = await request(app)
+      .get('/api/articles?topic=mitch&sort_by=votes&order=desc')
+      .expect(200);
+
+    const articles = response.body.articles;
+    expect(articles.length).toBeGreaterThan(0);
+    
+    // All should have mitch topic
+    articles.forEach(article => {
+      expect(article.topic).toBe('mitch');
+    });
+
+    // Should be sorted by votes descending
+    if (articles.length > 1) {
+      for (let i = 0; i < articles.length - 1; i++) {
+        expect(articles[i].votes).toBeGreaterThanOrEqual(articles[i + 1].votes);
+      }
+    }
+  });
+
+  test('200: works with topic and title sorting', async () => {
+    const response = await request(app)
+      .get('/api/articles?topic=mitch&sort_by=title&order=asc')
+      .expect(200);
+
+    const articles = response.body.articles;
+    expect(articles.length).toBeGreaterThan(0);
+    
+    // All should have mitch topic
+    articles.forEach(article => {
+      expect(article.topic).toBe('mitch');
+    });
+
+    // Should be sorted by title ascending
+    if (articles.length > 1) {
+      for (let i = 0; i < articles.length - 1; i++) {
+        expect(articles[i].title.localeCompare(articles[i + 1].title)).toBeLessThanOrEqual(0);
+      }
+    }
+  });
+
+  // Error handling tests
+  test('404: responds with error when topic does not exist', async () => {
+    const response = await request(app)
+      .get('/api/articles?topic=nonexistent_topic')
+      .expect(404);
+
+    expect(response.body.msg).toBe('Topic not found');
+  });
+
+  test('400: responds with error when topic is SQL injection attempt', async () => {
+    const response = await request(app)
+      .get('/api/articles?topic=mitch; DROP TABLE articles;')
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  // Edge cases
+  test('200: handles empty topic parameter', async () => {
+    const response = await request(app)
+      .get('/api/articles?topic=')
+      .expect(200);
+
+    const articles = response.body.articles;
+    
+    // Should return all articles when topic is empty
+    expect(articles.length).toBeGreaterThan(1);
+    const topics = [...new Set(articles.map(article => article.topic))];
+    expect(topics.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('200: ignores extra query parameters when filtering by topic', async () => {
+    const response = await request(app)
+      .get('/api/articles?topic=cats&extra_param=ignored&another=also_ignored')
+      .expect(200);
+
+    const articles = response.body.articles;
+    expect(articles.length).toBeGreaterThan(0);
+    
+    articles.forEach(article => {
+      expect(article.topic).toBe('cats');
+    });
+  });
+
+  test('200: returns correct number of articles for mitch topic', async () => {
+    // Get count directly from database
+    const dbResult = await db.query(
+      "SELECT COUNT(*) FROM articles WHERE topic = 'mitch'"
+    );
+    const expectedCount = parseInt(dbResult.rows[0].count);
+
+    const response = await request(app)
+      .get('/api/articles?topic=mitch')
+      .expect(200);
+
+    expect(response.body.articles.length).toBe(expectedCount);
+    expect(expectedCount).toBeGreaterThan(5); // Based on test data, should have many mitch articles
+  });
+
+  test('200: returns correct number of articles for cats topic', async () => {
+    // Get count directly from database  
+    const dbResult = await db.query(
+      "SELECT COUNT(*) FROM articles WHERE topic = 'cats'"
+    );
+    const expectedCount = parseInt(dbResult.rows[0].count);
+
+    const response = await request(app)
+      .get('/api/articles?topic=cats')
+      .expect(200);
+
+    expect(response.body.articles.length).toBe(expectedCount);
+    expect(expectedCount).toBeGreaterThanOrEqual(1); // Should have at least 1 cats article
+  });
+});
