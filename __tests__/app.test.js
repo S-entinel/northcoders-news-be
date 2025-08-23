@@ -1274,3 +1274,275 @@ describe('POST /api/articles/:article_id/comments', () => {
     expect(comment).not.toHaveProperty('extraProperty');
   });
 });
+
+describe('PATCH /api/articles/:article_id', () => {
+  test('200: responds with the updated article', async () => {
+    const voteUpdate = { inc_votes: 5 };
+
+    const response = await request(app)
+      .patch('/api/articles/1')
+      .send(voteUpdate)
+      .expect(200);
+
+    expect(response.body).toHaveProperty('article');
+    expect(typeof response.body.article).toBe('object');
+    expect(Array.isArray(response.body.article)).toBe(false);
+  });
+
+  test('200: updated article has all required properties', async () => {
+    const voteUpdate = { inc_votes: 1 };
+
+    const response = await request(app)
+      .patch('/api/articles/1')
+      .send(voteUpdate)
+      .expect(200);
+
+    const article = response.body.article;
+    
+    expect(article).toHaveProperty('article_id');
+    expect(article).toHaveProperty('title');
+    expect(article).toHaveProperty('topic');
+    expect(article).toHaveProperty('author');
+    expect(article).toHaveProperty('body');
+    expect(article).toHaveProperty('created_at');
+    expect(article).toHaveProperty('votes');
+    expect(article).toHaveProperty('article_img_url');
+    
+    expect(typeof article.article_id).toBe('number');
+    expect(typeof article.title).toBe('string');
+    expect(typeof article.topic).toBe('string');
+    expect(typeof article.author).toBe('string');
+    expect(typeof article.body).toBe('string');
+    expect(typeof article.created_at).toBe('string');
+    expect(typeof article.votes).toBe('number');
+    expect(typeof article.article_img_url).toBe('string');
+  });
+
+  test('200: increments votes by positive number', async () => {
+    const originalResponse = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+    const originalVotes = originalResponse.body.article.votes;
+
+    const voteUpdate = { inc_votes: 10 };
+
+    const response = await request(app)
+      .patch('/api/articles/1')
+      .send(voteUpdate)
+      .expect(200);
+
+    expect(response.body.article.votes).toBe(originalVotes + 10);
+    expect(response.body.article.article_id).toBe(1);
+  });
+
+  test('200: decrements votes by negative number', async () => {
+    const originalResponse = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+    const originalVotes = originalResponse.body.article.votes;
+
+    const voteUpdate = { inc_votes: -5 };
+
+    const response = await request(app)
+      .patch('/api/articles/1')
+      .send(voteUpdate)
+      .expect(200);
+
+    expect(response.body.article.votes).toBe(originalVotes - 5);
+    expect(response.body.article.article_id).toBe(1);
+  });
+
+  test('200: handles zero increment', async () => {
+    const originalResponse = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+    const originalVotes = originalResponse.body.article.votes;
+
+    const voteUpdate = { inc_votes: 0 };
+
+    const response = await request(app)
+      .patch('/api/articles/1')
+      .send(voteUpdate)
+      .expect(200);
+
+    expect(response.body.article.votes).toBe(originalVotes);
+  });
+
+  test('200: votes are actually updated in database', async () => {
+    const voteUpdate = { inc_votes: 15 };
+
+    await request(app)
+      .patch('/api/articles/1')
+      .send(voteUpdate)
+      .expect(200);
+
+    const dbResult = await db.query(
+      'SELECT votes FROM articles WHERE article_id = 1'
+    );
+    
+    const updatedResponse = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+
+    expect(updatedResponse.body.article.votes).toBe(dbResult.rows[0].votes);
+  });
+
+  test('200: only votes property is changed, other properties remain the same', async () => {
+    const originalResponse = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+    const originalArticle = originalResponse.body.article;
+
+    const voteUpdate = { inc_votes: 7 };
+
+    const response = await request(app)
+      .patch('/api/articles/1')
+      .send(voteUpdate)
+      .expect(200);
+
+    const updatedArticle = response.body.article;
+
+    expect(updatedArticle.title).toBe(originalArticle.title);
+    expect(updatedArticle.topic).toBe(originalArticle.topic);
+    expect(updatedArticle.author).toBe(originalArticle.author);
+    expect(updatedArticle.body).toBe(originalArticle.body);
+    expect(updatedArticle.created_at).toBe(originalArticle.created_at);
+    expect(updatedArticle.article_img_url).toBe(originalArticle.article_img_url);
+    expect(updatedArticle.votes).toBe(originalArticle.votes + 7);
+  });
+
+  test('200: works with different article IDs', async () => {
+    const voteUpdate = { inc_votes: 3 };
+
+    const response = await request(app)
+      .patch('/api/articles/2')
+      .send(voteUpdate)
+      .expect(200);
+
+    expect(response.body.article.article_id).toBe(2);
+  });
+
+  test('404: responds with error when article_id does not exist', async () => {
+    const voteUpdate = { inc_votes: 5 };
+
+    const response = await request(app)
+      .patch('/api/articles/999999')
+      .send(voteUpdate)
+      .expect(404);
+
+    expect(response.body.msg).toBe('Article not found');
+  });
+
+  test('400: responds with error when article_id is not a number', async () => {
+    const voteUpdate = { inc_votes: 5 };
+
+    const response = await request(app)
+      .patch('/api/articles/not-a-number')
+      .send(voteUpdate)
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('400: responds with error when inc_votes is missing', async () => {
+    const response = await request(app)
+      .patch('/api/articles/1')
+      .send({})
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('400: responds with error when inc_votes is not a number', async () => {
+    const voteUpdate = { inc_votes: 'not-a-number' };
+
+    const response = await request(app)
+      .patch('/api/articles/1')
+      .send(voteUpdate)
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('400: responds with error when inc_votes is null', async () => {
+    const voteUpdate = { inc_votes: null };
+
+    const response = await request(app)
+      .patch('/api/articles/1')
+      .send(voteUpdate)
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('400: responds with error when inc_votes is a decimal', async () => {
+    const voteUpdate = { inc_votes: 1.5 };
+
+    const response = await request(app)
+      .patch('/api/articles/1')
+      .send(voteUpdate)
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('400: responds with error when request body is empty', async () => {
+    const response = await request(app)
+      .patch('/api/articles/1')
+      .send()
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('200: ignores extra properties in request body', async () => {
+    const voteUpdate = {
+      inc_votes: 8,
+      title: 'This should be ignored',
+      extraProperty: 'This should also be ignored'
+    };
+
+    const originalResponse = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+
+    const response = await request(app)
+      .patch('/api/articles/1')
+      .send(voteUpdate)
+      .expect(200);
+
+    const updatedArticle = response.body.article;
+
+    expect(updatedArticle.votes).toBe(originalResponse.body.article.votes + 8);
+    expect(updatedArticle.title).toBe(originalResponse.body.article.title);
+    expect(updatedArticle).not.toHaveProperty('extraProperty');
+  });
+
+  test('200: handles large positive increment', async () => {
+    const voteUpdate = { inc_votes: 1000 };
+
+    const response = await request(app)
+      .patch('/api/articles/1')
+      .send(voteUpdate)
+      .expect(200);
+
+    expect(response.body.article.votes).toBeGreaterThan(900);
+  });
+
+  test('200: handles large negative increment', async () => {
+    const voteUpdate = { inc_votes: -1000 };
+
+    const response = await request(app)
+      .patch('/api/articles/1')
+      .send(voteUpdate)
+      .expect(200);
+
+    expect(response.body.article.votes).toBeLessThan(0);
+  });
+});
