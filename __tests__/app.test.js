@@ -690,3 +690,327 @@ describe('GET /api/articles/:article_id', () => {
     ]));
   });
 });
+
+describe('GET /api/articles/:article_id/comments', () => {
+  test('200: responds with an array of comments for the given article', async () => {
+    const response = await request(app)
+      .get('/api/articles/1/comments')
+      .expect(200);
+
+    expect(response.body).toHaveProperty('comments');
+    expect(Array.isArray(response.body.comments)).toBe(true);
+  });
+
+  test('200: each comment object has all required properties', async () => {
+    const response = await request(app)
+      .get('/api/articles/1/comments')
+      .expect(200);
+
+    const comments = response.body.comments;
+    
+    if (comments.length > 0) {
+      comments.forEach((comment) => {
+        expect(comment).toHaveProperty('comment_id');
+        expect(comment).toHaveProperty('votes');
+        expect(comment).toHaveProperty('created_at');
+        expect(comment).toHaveProperty('author');
+        expect(comment).toHaveProperty('body');
+        expect(comment).toHaveProperty('article_id');
+        
+        expect(typeof comment.comment_id).toBe('number');
+        expect(typeof comment.votes).toBe('number');
+        expect(typeof comment.created_at).toBe('string');
+        expect(typeof comment.author).toBe('string');
+        expect(typeof comment.body).toBe('string');
+        expect(typeof comment.article_id).toBe('number');
+      });
+    }
+  });
+
+  test('200: all comments belong to the specified article_id', async () => {
+    const articleId = 1;
+    const response = await request(app)
+      .get(`/api/articles/${articleId}/comments`)
+      .expect(200);
+
+    const comments = response.body.comments;
+    
+    comments.forEach((comment) => {
+      expect(comment.article_id).toBe(articleId);
+    });
+  });
+
+  test('200: comments are sorted by created_at in descending order (most recent first)', async () => {
+    const response = await request(app)
+      .get('/api/articles/1/comments')
+      .expect(200);
+
+    const comments = response.body.comments;
+    
+    if (comments.length > 1) {
+      for (let i = 0; i < comments.length - 1; i++) {
+        const currentDate = new Date(comments[i].created_at);
+        const nextDate = new Date(comments[i + 1].created_at);
+        expect(currentDate.getTime()).toBeGreaterThanOrEqual(nextDate.getTime());
+      }
+    }
+  });
+
+  test('200: created_at is in valid ISO format', async () => {
+    const response = await request(app)
+      .get('/api/articles/1/comments')
+      .expect(200);
+
+    const comments = response.body.comments;
+    
+    comments.forEach((comment) => {
+      const date = new Date(comment.created_at);
+      expect(comment.created_at).toBe(date.toISOString());
+      expect(isNaN(date.getTime())).toBe(false);
+    });
+  });
+
+  test('200: votes are integers', async () => {
+    const response = await request(app)
+      .get('/api/articles/1/comments')
+      .expect(200);
+
+    const comments = response.body.comments;
+    
+    comments.forEach((comment) => {
+      expect(Number.isInteger(comment.votes)).toBe(true);
+    });
+  });
+
+  test('200: authors exist in users table', async () => {
+    const response = await request(app)
+      .get('/api/articles/1/comments')
+      .expect(200);
+
+    const comments = response.body.comments;
+    
+    if (comments.length > 0) {
+      const usersResult = await db.query('SELECT username FROM users;');
+      const validAuthors = usersResult.rows.map(row => row.username);
+      
+      comments.forEach((comment) => {
+        expect(validAuthors).toContain(comment.author);
+      });
+    }
+  });
+
+  test('200: returns correct comments from database', async () => {
+    const articleId = 1;
+    
+    const dbResult = await db.query(
+      'SELECT * FROM comments WHERE article_id = $1 ORDER BY created_at DESC;',
+      [articleId]
+    );
+    const dbComments = dbResult.rows;
+
+    const response = await request(app)
+      .get(`/api/articles/${articleId}/comments`)
+      .expect(200);
+
+    const comments = response.body.comments;
+    
+    expect(comments.length).toBe(dbComments.length);
+    
+    if (comments.length > 0) {
+      comments.forEach((comment, index) => {
+        expect(comment.comment_id).toBe(dbComments[index].comment_id);
+        expect(comment.votes).toBe(dbComments[index].votes);
+        expect(comment.author).toBe(dbComments[index].author);
+        expect(comment.body).toBe(dbComments[index].body);
+        expect(comment.article_id).toBe(dbComments[index].article_id);
+        expect(new Date(comment.created_at)).toEqual(dbComments[index].created_at);
+      });
+    }
+  });
+
+  test('200: response structure is correct', async () => {
+    const response = await request(app)
+      .get('/api/articles/1/comments')
+      .expect(200);
+
+    const responseKeys = Object.keys(response.body);
+    expect(responseKeys).toHaveLength(1);
+    expect(responseKeys[0]).toBe('comments');
+  });
+
+  test('200: comment objects only contain expected properties', async () => {
+    const response = await request(app)
+      .get('/api/articles/1/comments')
+      .expect(200);
+
+    const comments = response.body.comments;
+    
+    if (comments.length > 0) {
+      comments.forEach((comment) => {
+        const commentKeys = Object.keys(comment);
+        expect(commentKeys).toHaveLength(6);
+        expect(commentKeys).toEqual(expect.arrayContaining([
+          'comment_id', 'votes', 'created_at', 'author', 'body', 'article_id'
+        ]));
+      });
+    }
+  });
+
+  test('200: returns empty array for article with no comments', async () => {
+    const articlesResult = await db.query('SELECT article_id FROM articles;');
+    const allArticleIds = articlesResult.rows.map(row => row.article_id);
+    
+    const commentsResult = await db.query('SELECT DISTINCT article_id FROM comments;');
+    const articlesWithComments = commentsResult.rows.map(row => row.article_id);
+    
+    const articleWithoutComments = allArticleIds.find(id => !articlesWithComments.includes(id));
+    
+    if (articleWithoutComments) {
+      const response = await request(app)
+        .get(`/api/articles/${articleWithoutComments}/comments`)
+        .expect(200);
+
+      expect(response.body.comments).toEqual([]);
+    }
+  });
+
+  test('200: handles articles with many comments correctly', async () => {
+    const response = await request(app)
+      .get('/api/articles/1/comments')
+      .expect(200);
+
+    const comments = response.body.comments;
+    
+    const commentIds = comments.map(comment => comment.comment_id);
+    const uniqueCommentIds = [...new Set(commentIds)];
+    expect(commentIds.length).toBe(uniqueCommentIds.length);
+  });
+
+  test('404: responds with error when article_id does not exist', async () => {
+    const response = await request(app)
+      .get('/api/articles/999999/comments')
+      .expect(404);
+
+    expect(response.body.msg).toBe('Article not found');
+  });
+
+  test('400: responds with error when article_id is not a number', async () => {
+    const response = await request(app)
+      .get('/api/articles/not-a-number/comments')
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('400: responds with error when article_id is a decimal', async () => {
+    const response = await request(app)
+      .get('/api/articles/1.5/comments')
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('404: responds with error when article_id is zero', async () => {
+    const response = await request(app)
+      .get('/api/articles/0/comments')
+      .expect(404);
+
+    expect(response.body.msg).toBe('Article not found');
+  });
+
+  test('404: responds with error when article_id is negative', async () => {
+    const response = await request(app)
+      .get('/api/articles/-1/comments')
+      .expect(404);
+
+    expect(response.body.msg).toBe('Article not found');
+  });
+
+  test('400: responds with error when article_id contains special characters', async () => {
+    const response = await request(app)
+      .get('/api/articles/1@/comments')
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('500: responds with server error when article_id is too large for JavaScript', async () => {
+    const response = await request(app)
+      .get('/api/articles/999999999999999999999/comments')
+      .expect(500);
+
+    expect(response.body.msg).toBe('Internal server error');
+  });
+
+  test('404: responds with error when article_id is valid but non-existent', async () => {
+    const maxIdResult = await db.query('SELECT MAX(article_id) FROM articles;');
+    const nonExistentId = maxIdResult.rows[0].max + 1;
+
+    const response = await request(app)
+      .get(`/api/articles/${nonExistentId}/comments`)
+      .expect(404);
+
+    expect(response.body.msg).toBe('Article not found');
+  });
+
+  test('400: responds with error when article_id contains SQL injection attempt', async () => {
+    const response = await request(app)
+      .get('/api/articles/1; DROP TABLE comments;/comments')
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('200: works with single digit article_id', async () => {
+    const response = await request(app)
+      .get('/api/articles/1/comments')
+      .expect(200);
+
+    expect(response.body).toHaveProperty('comments');
+    expect(Array.isArray(response.body.comments)).toBe(true);
+  });
+
+  test('200: works with multi-digit article_id', async () => {
+    const response = await request(app)
+      .get('/api/articles/10/comments')
+      .expect(200);
+
+    expect(response.body).toHaveProperty('comments');
+    expect(Array.isArray(response.body.comments)).toBe(true);
+  });
+
+  test('200: handles different article_ids consistently', async () => {
+    const response1 = await request(app)
+      .get('/api/articles/1/comments')
+      .expect(200);
+
+    const response2 = await request(app)
+      .get('/api/articles/2/comments')
+      .expect(200);
+
+    expect(Array.isArray(response1.body.comments)).toBe(true);
+    expect(Array.isArray(response2.body.comments)).toBe(true);
+
+    const comments1 = response1.body.comments;
+    const comments2 = response2.body.comments;
+    
+    comments1.forEach(comment => expect(comment.article_id).toBe(1));
+    comments2.forEach(comment => expect(comment.article_id).toBe(2));
+  });
+
+  test('200: returns consistent results on multiple requests', async () => {
+    const response1 = await request(app)
+      .get('/api/articles/1/comments')
+      .expect(200);
+
+    const response2 = await request(app)
+      .get('/api/articles/1/comments')
+      .expect(200);
+
+    expect(response1.body.comments).toEqual(response2.body.comments);
+  });
+});
