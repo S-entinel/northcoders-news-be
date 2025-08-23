@@ -32,7 +32,7 @@ exports.fetchArticleById = ( articleId ) => {
 }
 
 exports.changeVotesById = (articleId, votes) => {
-    if (votes === undefined || typeof votes !== 'number') {
+    if (votes === undefined || typeof votes !== 'number' || !Number.isInteger(votes)) {
         return Promise.reject({ status: 400, msg: "Votes entry is invalid" });
     }
 

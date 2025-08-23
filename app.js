@@ -4,7 +4,7 @@ const endpointsJson = require("./endpoints.json");
 const { getTopics } = require("./controllers/topics.controllers")
 const { getArticles, getArticleById, patchVotesById } = require("./controllers/articles.controllers")
 const { getUsers } = require("./controllers/users.controllers")
-const { getCommentsById, postCommentsById } = require("./controllers/comments.controllers")
+const { getCommentsById, postCommentsById, deleteCommentsById } = require("./controllers/comments.controllers")
 const { handlePsqlErrors, handleCustomErrors, handleServerErrors } = require("./errors");
 
 
@@ -33,6 +33,7 @@ app.post("/api/articles/:article_id/comments", postCommentsById);
 
 app.patch("/api/articles/:article_id", patchVotesById);
 
+app.delete("/api/comments/:comment_id", deleteCommentsById);
 
 
 

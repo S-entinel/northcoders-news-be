@@ -1546,3 +1546,185 @@ describe('PATCH /api/articles/:article_id', () => {
     expect(response.body.article.votes).toBeLessThan(0);
   });
 });
+
+describe('DELETE /api/comments/:comment_id', () => {
+  test('204: responds with status 204 and no content', async () => {
+    const response = await request(app)
+      .delete('/api/comments/1')
+      .expect(204);
+
+    expect(response.body).toEqual({});
+    expect(response.text).toBe('');
+  });
+
+  test('204: comment is actually deleted from database', async () => {
+    const checkBefore = await db.query(
+      'SELECT * FROM comments WHERE comment_id = 1'
+    );
+    expect(checkBefore.rows).toHaveLength(1);
+
+    await request(app)
+      .delete('/api/comments/1')
+      .expect(204);
+
+    const checkAfter = await db.query(
+      'SELECT * FROM comments WHERE comment_id = 1'
+    );
+    expect(checkAfter.rows).toHaveLength(0);
+  });
+
+  test('204: works with different comment IDs', async () => {
+    const commentsResult = await db.query('SELECT comment_id FROM comments LIMIT 3');
+    const commentId = commentsResult.rows[1].comment_id;
+
+    await request(app)
+      .delete(`/api/comments/${commentId}`)
+      .expect(204);
+
+    const checkDeleted = await db.query(
+      'SELECT * FROM comments WHERE comment_id = $1',
+      [commentId]
+    );
+    expect(checkDeleted.rows).toHaveLength(0);
+  });
+
+  test('204: does not affect other comments', async () => {
+    const countBefore = await db.query('SELECT COUNT(*) FROM comments');
+    const initialCount = parseInt(countBefore.rows[0].count);
+
+    await request(app)
+      .delete('/api/comments/1')
+      .expect(204);
+
+    const countAfter = await db.query('SELECT COUNT(*) FROM comments');
+    const finalCount = parseInt(countAfter.rows[0].count);
+    
+    expect(finalCount).toBe(initialCount - 1);
+  });
+
+  test('204: does not affect the associated article', async () => {
+    const commentResult = await db.query(
+      'SELECT article_id FROM comments WHERE comment_id = 1'
+    );
+    const articleId = commentResult.rows[0].article_id;
+
+    const articleBefore = await db.query(
+      'SELECT * FROM articles WHERE article_id = $1',
+      [articleId]
+    );
+
+    await request(app)
+      .delete('/api/comments/1')
+      .expect(204);
+
+    const articleAfter = await db.query(
+      'SELECT * FROM articles WHERE article_id = $1',
+      [articleId]
+    );
+    
+    expect(articleAfter.rows).toHaveLength(1);
+    expect(articleAfter.rows[0]).toEqual(articleBefore.rows[0]);
+  });
+
+  test('404: responds with error when comment_id does not exist', async () => {
+    const response = await request(app)
+      .delete('/api/comments/999999')
+      .expect(404);
+
+    expect(response.body.msg).toBe('Comment not found');
+  });
+
+  test('400: responds with error when comment_id is not a number', async () => {
+    const response = await request(app)
+      .delete('/api/comments/not-a-number')
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('400: responds with error when comment_id is a decimal', async () => {
+    const response = await request(app)
+      .delete('/api/comments/1.5')
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('404: responds with error when comment_id is zero', async () => {
+    const response = await request(app)
+      .delete('/api/comments/0')
+      .expect(404);
+
+    expect(response.body.msg).toBe('Comment not found');
+  });
+
+  test('404: responds with error when comment_id is negative', async () => {
+    const response = await request(app)
+      .delete('/api/comments/-1')
+      .expect(404);
+
+    expect(response.body.msg).toBe('Comment not found');
+  });
+
+  test('400: responds with error when comment_id contains special characters', async () => {
+    const response = await request(app)
+      .delete('/api/comments/1@')
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('404: responds with error when comment_id is valid but non-existent', async () => {
+    const maxIdResult = await db.query('SELECT MAX(comment_id) FROM comments;');
+    const nonExistentId = maxIdResult.rows[0].max + 1;
+
+    const response = await request(app)
+      .delete(`/api/comments/${nonExistentId}`)
+      .expect(404);
+
+    expect(response.body.msg).toBe('Comment not found');
+  });
+
+  test('400: responds with error when comment_id contains SQL injection attempt', async () => {
+    const response = await request(app)
+      .delete('/api/comments/1; DROP TABLE comments;')
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
+  });
+
+  test('204: handles deletion of recently created comment', async () => {
+    const newComment = await db.query(
+      `INSERT INTO comments (article_id, body, author)
+       VALUES (1, 'Test comment for deletion', 'butter_bridge')
+       RETURNING comment_id`
+    );
+    const newCommentId = newComment.rows[0].comment_id;
+
+    await request(app)
+      .delete(`/api/comments/${newCommentId}`)
+      .expect(204);
+
+    const checkDeleted = await db.query(
+      'SELECT * FROM comments WHERE comment_id = $1',
+      [newCommentId]
+    );
+    expect(checkDeleted.rows).toHaveLength(0);
+  });
+
+  test('404: multiple attempts to delete same comment return 404', async () => {
+    await request(app)
+      .delete('/api/comments/1')
+      .expect(204);
+
+    const response = await request(app)
+      .delete('/api/comments/1')
+      .expect(404);
+
+    expect(response.body.msg).toBe('Comment not found');
+  });
+});
