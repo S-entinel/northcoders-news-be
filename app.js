@@ -11,12 +11,15 @@ const { handlePsqlErrors, handleCustomErrors, handleServerErrors } = require("./
 
 app.use(express.json());
 
+app.use('/api', express.static('public'));
+
+
 app.get("/", (req, res) => {
     res.status(200).send({ msg: "Welcome to the API! Visit /api for documentation" });
   });
   
-app.get("/api", (req, res) => {
-res.status(200).send({ endpoints: endpointsJson });
+app.get("/api/endpoints", (req, res) => {
+    res.status(200).send({ endpoints: endpointsJson });
 });
 
 app.get("/api/topics", getTopics);

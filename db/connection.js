@@ -17,7 +17,7 @@ const db = new Pool(config);
 if (!process.env.PGDATABASE && !process.env.DATABASE_URL) {
     throw new Error("PGDATABASE or DATABASE_URL not set");
 } else { 
-    console.log(`Connected to the ${process.env.NODE_ENV} database`)
+    console.log(`Connected to the ${ENV} database`)
 }
 
 
