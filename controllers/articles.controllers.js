@@ -20,7 +20,7 @@ exports.getArticleById = (req, res, next) => {
 
 exports.patchArticleVotesById = (req, res, next) => {
   const { article_id } = req.params
-  const { inc_votes } = req.body
+  const { inc_votes } = req.body || {};
   changeArticleVotesById( article_id, inc_votes ).then((article) => {
     res.status(200).send({ article });
   })
