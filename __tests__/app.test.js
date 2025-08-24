@@ -681,10 +681,10 @@ describe('GET /api/articles/:article_id', () => {
     const article = response.body.article;
     const articleKeys = Object.keys(article);
     
-    expect(articleKeys).toHaveLength(8);
+    expect(articleKeys).toHaveLength(9);
     expect(articleKeys).toEqual(expect.arrayContaining([
       'author', 'title', 'article_id', 'body', 'topic', 
-      'created_at', 'votes', 'article_img_url'
+      'created_at', 'votes', 'article_img_url', 'comment_count'
     ]));
   });
 });
@@ -2170,5 +2170,167 @@ describe('GET /api/articles (topic query)', () => {
 
     expect(response.body.articles.length).toBe(expectedCount);
     expect(expectedCount).toBeGreaterThanOrEqual(1); // Should have at least 1 cats article
+  });
+});
+
+describe('GET /api/articles/:article_id (comment_count)', () => {
+  test('200: article response includes comment_count property', async () => {
+    const response = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+
+    const article = response.body.article;
+    
+    expect(article).toHaveProperty('comment_count');
+    expect(typeof article.comment_count).toBe('number');
+    expect(Number.isInteger(article.comment_count)).toBe(true);
+    expect(article.comment_count).toBeGreaterThanOrEqual(0);
+  });
+
+  test('200: comment_count is accurate for article with comments', async () => {
+    // Get actual comment count from database
+    const dbResult = await db.query(
+      'SELECT COUNT(*) FROM comments WHERE article_id = 1'
+    );
+    const expectedCount = parseInt(dbResult.rows[0].count);
+
+    const response = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+
+    expect(response.body.article.comment_count).toBe(expectedCount);
+    expect(expectedCount).toBeGreaterThan(0); // Article 1 should have comments
+  });
+
+  test('200: comment_count is 0 for article with no comments', async () => {
+    // Find an article with no comments
+    const articlesResult = await db.query('SELECT article_id FROM articles;');
+    const allArticleIds = articlesResult.rows.map(row => row.article_id);
+    
+    const commentsResult = await db.query('SELECT DISTINCT article_id FROM comments;');
+    const articlesWithComments = commentsResult.rows.map(row => row.article_id);
+    
+    const articleWithoutComments = allArticleIds.find(id => !articlesWithComments.includes(id));
+    
+    if (articleWithoutComments) {
+      const response = await request(app)
+        .get(`/api/articles/${articleWithoutComments}`)
+        .expect(200);
+
+      expect(response.body.article.comment_count).toBe(0);
+    }
+  });
+
+  test('200: maintains all existing article properties with comment_count', async () => {
+    const response = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+
+    const article = response.body.article;
+    
+    // All original properties should still be present
+    expect(article).toHaveProperty('article_id');
+    expect(article).toHaveProperty('title');
+    expect(article).toHaveProperty('topic');
+    expect(article).toHaveProperty('author');
+    expect(article).toHaveProperty('body');
+    expect(article).toHaveProperty('created_at');
+    expect(article).toHaveProperty('votes');
+    expect(article).toHaveProperty('article_img_url');
+    
+    // Plus the new comment_count property
+    expect(article).toHaveProperty('comment_count');
+    
+    // Should have exactly 9 properties now (8 original + comment_count)
+    expect(Object.keys(article)).toHaveLength(9);
+  });
+
+  test('200: comment_count updates when comments are added', async () => {
+    // Get initial comment count
+    const initialResponse = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+    const initialCount = initialResponse.body.article.comment_count;
+
+    // Add a new comment
+    await request(app)
+      .post('/api/articles/1/comments')
+      .send({ username: 'butter_bridge', body: 'Test comment for count' })
+      .expect(201);
+
+    // Check comment count has increased
+    const updatedResponse = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+    const updatedCount = updatedResponse.body.article.comment_count;
+
+    expect(updatedCount).toBe(initialCount + 1);
+  });
+
+  test('200: comment_count updates when comments are deleted', async () => {
+    // Get an article with comments and its initial count
+    const initialResponse = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+    const initialCount = initialResponse.body.article.comment_count;
+
+    if (initialCount > 0) {
+      // Find a comment for this article to delete
+      const commentResult = await db.query(
+        'SELECT comment_id FROM comments WHERE article_id = 1 LIMIT 1'
+      );
+      const commentId = commentResult.rows[0].comment_id;
+
+      // Delete the comment
+      await request(app)
+        .delete(`/api/comments/${commentId}`)
+        .expect(204);
+
+      // Check comment count has decreased
+      const updatedResponse = await request(app)
+        .get('/api/articles/1')
+        .expect(200);
+      const updatedCount = updatedResponse.body.article.comment_count;
+
+      expect(updatedCount).toBe(initialCount - 1);
+    }
+  });
+
+  test('200: works with different article IDs', async () => {
+    const response1 = await request(app)
+      .get('/api/articles/1')
+      .expect(200);
+
+    const response2 = await request(app)
+      .get('/api/articles/2')
+      .expect(200);
+
+    // Both should have comment_count property
+    expect(response1.body.article).toHaveProperty('comment_count');
+    expect(response2.body.article).toHaveProperty('comment_count');
+
+    // Values should be integers >= 0
+    expect(Number.isInteger(response1.body.article.comment_count)).toBe(true);
+    expect(Number.isInteger(response2.body.article.comment_count)).toBe(true);
+    expect(response1.body.article.comment_count).toBeGreaterThanOrEqual(0);
+    expect(response2.body.article.comment_count).toBeGreaterThanOrEqual(0);
+  });
+
+  // Error handling should remain unchanged
+  test('404: still responds with error when article_id does not exist', async () => {
+    const response = await request(app)
+      .get('/api/articles/999999')
+      .expect(404);
+
+    expect(response.body.msg).toBe('Article not found');
+  });
+
+  test('400: still responds with error when article_id is not a number', async () => {
+    const response = await request(app)
+      .get('/api/articles/not-a-number')
+      .expect(400);
+
+    expect(response.body.msg).toBeDefined();
+    expect(typeof response.body.msg).toBe('string');
   });
 });

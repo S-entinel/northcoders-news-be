@@ -1,4 +1,4 @@
-const { fetchArticles, fetchArticleById, changeVotesById } = require("../models/articles.models")
+const { fetchArticles, fetchArticleById, changeArticleVotesById } = require("../models/articles.models")
 
 exports.getArticles = (req, res, next) => {
   const sortBy = req.query.sort_by || 'created_at';
@@ -18,10 +18,10 @@ exports.getArticleById = (req, res, next) => {
   .catch(next);
 };
 
-exports.patchVotesById = (req, res, next) => {
+exports.patchArticleVotesById = (req, res, next) => {
   const { article_id } = req.params
   const { inc_votes } = req.body
-  changeVotesById( article_id, inc_votes ).then((article) => {
+  changeArticleVotesById( article_id, inc_votes ).then((article) => {
     res.status(200).send({ article });
   })
   .catch(next);
